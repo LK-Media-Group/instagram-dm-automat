@@ -1,0 +1,20 @@
+[Unit]
+Description=Instagram DM automation
+After=network-online.target
+Wants=network-online.target
+[Service]
+Type=simple
+User=ig-automat
+Group=ig-automat
+WorkingDirectory=/opt/ig-automat
+ExecStart=/usr/bin/node /opt/ig-automat/server.js
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/opt/ig-automat/data
+[Install]
+WantedBy=multi-user.target

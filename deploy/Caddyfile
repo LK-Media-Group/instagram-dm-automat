@@ -1,0 +1,9 @@
+{$PUBLIC_DOMAIN} {
+    @webhook path /ig-webhook /ig-webhook/*
+    handle @webhook {
+        reverse_proxy app:8101
+    }
+    handle {
+        respond "Not found" 404
+    }
+}

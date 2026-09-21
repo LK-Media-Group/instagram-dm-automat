@@ -1,0 +1,14 @@
+{
+  "account_id": 1,
+  "type": "dm_keyword",
+  "name": "Ukázkový průvodce",
+  "keywords": ["pruvodce"],
+  "media_scope": null,
+  "dm_template": {
+    "text": "Tady je slíbený průvodce.",
+    "buttons": [{"type": "web_url", "title": "Otevřít průvodce", "url": "https://example.com/pruvodce"}]
+  },
+  "followups": [],
+  "active": false,
+  "priority": 100
+}

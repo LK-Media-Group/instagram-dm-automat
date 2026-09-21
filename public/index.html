@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ig-automat</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root { --bg:#0b0f14; --card:#121a24; --line:#1e2a38; --tx:#d8e2ee; --dim:#7c8ea4; --ac:#39d2ff; --ok:#3ddc84; --warn:#ffb020; --err:#ff5470; }
+* { box-sizing:border-box; margin:0; }
+body { background:var(--bg); color:var(--tx); font:14px/1.5 "JetBrains Mono",monospace; }
+h1,h2,h3,button,nav { font-family:"Chakra Petch",sans-serif; }
+header { display:flex; align-items:center; gap:16px; padding:10px 16px; border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--bg); z-index:5; }
+h1 { font-size:18px; letter-spacing:2px; color:var(--ac); }
+nav button { background:none; border:1px solid transparent; color:var(--dim); padding:6px 12px; cursor:pointer; font-size:14px; }
+nav button.on { color:var(--ac); border-color:var(--ac); border-radius:4px; }
+#badge { margin-left:auto; font-size:12px; padding:3px 10px; border-radius:10px; }
+#badge.dry { background:#3a2f10; color:var(--warn); } #badge.live { background:#0f3524; color:var(--ok); }
+main { padding:16px; max-width:1200px; margin:0 auto; }
+table { width:100%; border-collapse:collapse; }
+th,td { text-align:left; padding:6px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+th { color:var(--dim); font-weight:400; font-size:12px; }
+.card { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:14px; margin-bottom:16px; }
+button.act { background:var(--ac); color:#04222e; border:0; border-radius:4px; padding:7px 14px; cursor:pointer; font-weight:600; }
+button.ghost { background:none; border:1px solid var(--line); color:var(--dim); border-radius:4px; padding:5px 10px; cursor:pointer; }
+input,select,textarea { width:100%; background:#0e141c; border:1px solid var(--line); color:var(--tx); padding:7px; border-radius:4px; font:13px "JetBrains Mono",monospace; }
+label { display:block; margin:8px 0 2px; color:var(--dim); font-size:12px; }
+.grid2 { display:grid; grid-template-columns:1fr 1fr; gap:0 16px; }
+.inbox { display:grid; grid-template-columns:320px 1fr; gap:16px; min-height:60vh; }
+.convo { padding:8px 10px; border-bottom:1px solid var(--line); cursor:pointer; }
+.convo.on { background:#14202e; } .convo .who { color:var(--ac); }
+.convo .prev { color:var(--dim); font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.thread { display:flex; flex-direction:column; gap:6px; padding:10px 0; }
+.msg { max-width:75%; padding:7px 11px; border-radius:10px; white-space:pre-wrap; }
+.msg.in { background:#1a2634; align-self:flex-start; }
+.msg.out { background:#123c4d; align-self:flex-end; }
+.msg .src { display:block; font-size:10px; color:var(--dim); margin-top:2px; }
+.msg .btns { display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
+.btn-chip { display:inline-flex; align-items:center; gap:6px; font-size:12px; padding:3px 9px; border-radius:6px; border:1px solid var(--line); background:#0e141c; white-space:nowrap; }
+.btn-chip.clicked { border-color:var(--ok); }
+.btn-chip .k { font-size:10px; color:var(--dim); }
+.btn-chip.clicked .k { color:var(--ok); }
+.btn-chip a { color:var(--tx); text-decoration:none; }
+.btn-chip a:hover { color:var(--ac); }
+.msg.in.click { background:#123a2a; border:1px dashed var(--ok); font-size:12px; }
+.msg.in.click b { color:var(--ok); }
+.tl-sum { display:flex; gap:14px; flex-wrap:wrap; font-size:12px; color:var(--dim); margin:4px 0 6px; }
+.tl-sum b { color:var(--tx); }
+.links-strip { font-size:12px; color:var(--dim); border-top:1px solid var(--line); margin-top:8px; padding-top:8px; }
+.links-strip .row { display:flex; gap:10px; align-items:center; padding:2px 0; }
+.links-strip .ok { color:var(--ok); } .links-strip .no { color:var(--dim); }
+.links-strip a { color:var(--tx); text-decoration:none; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:520px; }
+.pill { font-size:11px; padding:2px 8px; border-radius:8px; }
+.pill.bot { background:#0f3524; color:var(--ok); } .pill.human { background:#3a1520; color:var(--err); }
+.pill.acc { background:#1e2a4a; color:#9db4ff; }
+.muted { color:var(--dim); }
+</style>
+</head>
+<body>
+<header>
+  <h1>IG AUTOMAT</h1>
+  <nav id="nav"></nav>
+  <span id="badge"></span>
+</header>
+<main id="view"></main>
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const TABS = { inbox:'Inbox', triggers:'Triggery', contacts:'Kontakty', stats:'Statistiky', settings:'Nastavení' };
+let tab = 'inbox', selConvo = null, settings = {};
+
+async function api(path, opts = {}) {
+  if (opts.body) { opts.body = JSON.stringify(opts.body); opts.headers = { 'content-type':'application/json' }; }
+  const r = await fetch('/api' + path, opts);
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) { alert(d.error || ('Chyba ' + r.status)); throw new Error(d.error || r.status); }
+  return d;
+}
+
+function nav() {
+  $('#nav').innerHTML = Object.entries(TABS).map(([k,v]) =>
+    `<button class="${k===tab?'on':''}" onclick="go('${k}')">${v}</button>`).join('');
+}
+window.go = k => { tab = k; nav(); render(); };
+
+async function badge() {
+  settings = await api('/settings');
+  const dry = (settings.dry_run ?? '1') === '1';
+  const b = $('#badge');
+  b.className = dry ? 'dry' : 'live';
+  b.textContent = dry ? '● DRY-RUN (neodesílá)' : '● ŽIVĚ';
+}
+
+const fmt = ts => ts ? new Date(ts * 1000).toLocaleString('cs-CZ') : '—';
+let accounts = [];
+const accName = id => (accounts.find(a => a.id === id) || {}).username || ('účet #' + id);
+const accTag = name => name ? `<span class="pill acc">@${esc(name)}</span>` : '';
+
+async function render() {
+  if (!accounts.length) accounts = await api('/accounts').catch(() => []);
+  if (tab === 'inbox') return renderInbox();
+  if (tab === 'triggers') return renderTriggers();
+  if (tab === 'contacts') return renderContacts();
+  if (tab === 'stats') return renderStats();
+  if (tab === 'settings') return renderSettings();
+}
+
+// Jedna zpráva ve vlákně: text + chipy tlačítek (web_url / postback / quick reply) s badgem kliku;
+// příchozí klik na tlačítko (postback / quick reply) jako zelený řádek „klik na tlačítko".
+const clickBadge = (ts, clicks) => ts ? `<span class="k">✓ klik ${fmt(ts)}${clicks > 1 ? ' (' + clicks + '×)' : ''}</span>` : '<span class="k">bez kliku</span>';
+function msgHtml(m) {
+  const meta = m.meta || {};
+  if (m.direction === 'in' && meta.click) {
+    const what = meta.kind === 'quick_reply' ? 'quick reply' : 'tlačítko';
+    return `<div class="msg in click">🔘 <b>klik na ${what}:</b> ${esc(meta.title || meta.click)}${meta.title ? ` <span class="muted">(${esc(meta.click)})</span>` : ''}
+      <span class="src">${m.source} · ${fmt(m.created_at)}</span></div>`;
+  }
+  if (m.direction === 'in' && !(m.text || '').trim() && !meta.click)
+    return `<div class="msg in click" style="border-color:var(--line)">🔘 <span class="muted">klik na tlačítko / příloha bez textu (detail neevidován)</span>
+      <span class="src">${m.source} · ${fmt(m.created_at)}</span></div>`;
+  let chips = '';
+  if (m.direction === 'out') {
+    const btns = (meta.buttons || []).map(b => b.type === 'web_url'
+      ? `<span class="btn-chip ${b.clicked_at ? 'clicked' : ''}" title="${esc(b.url)}">🔗 <a href="${esc(b.url)}" target="_blank" rel="noopener">${esc(b.title)}</a>${clickBadge(b.clicked_at, b.clicks)}</span>`
+      : `<span class="btn-chip ${b.clicked_at ? 'clicked' : ''}" title="payload ${esc(b.payload)}">▶ ${esc(b.title)}${clickBadge(b.clicked_at)}</span>`);
+    const qrs = (meta.quick_replies || []).map(q => `<span class="btn-chip ${q.clicked_at ? 'clicked' : ''}" title="quick reply ${esc(q.payload)}">⤷ ${esc(q.title)}${clickBadge(q.clicked_at)}</span>`);
+    if (btns.length || qrs.length) chips = `<div class="btns">${btns.join('')}${qrs.join('')}</div>`;
+  }
+  return `<div class="msg ${m.direction}">${esc(m.text || '')}${chips}
+    <span class="src">${m.source} · ${fmt(m.created_at)}</span></div>`;
+}
+
+async function renderInbox() {
+  const convos = await api('/conversations');
+  const list = convos.map(c => `<div class="convo ${c.id===selConvo?'on':''}" onclick="pick(${c.id})">
+    <span class="who">@${esc(c.username || c.igsid)}</span> <span class="pill ${c.state}">${c.state==='human'?'člověk':'bot'}</span> ${accTag(c.account)}
+    <div class="prev">${esc(c.last_text || '')}</div>
+    <div class="muted" style="font-size:11px">${fmt(c.last_user_msg_at)}</div></div>`).join('') || '<p class="muted">Zatím žádné konverzace.</p>';
+  let right = '<p class="muted">Vyber konverzaci vlevo.</p>';
+  if (selConvo) {
+    const [msgs, links] = await Promise.all([api(`/conversations/${selConvo}/messages`), api(`/conversations/${selConvo}/links`).catch(() => [])]);
+    const c = convos.find(x => x.id === selConvo) || {};
+    // souhrn tlačítek/kliků z meta zpráv (+ legacy odkazy z tabulky links, které nejsou u žádné zprávy)
+    const outBtns = msgs.filter(m => m.direction === 'out' && m.meta?.buttons?.length).flatMap(m => m.meta.buttons);
+    const qrs = msgs.filter(m => m.direction === 'out' && m.meta?.quick_replies?.length).flatMap(m => m.meta.quick_replies);
+    const clickedBtns = outBtns.filter(b => b.clicked_at).length + qrs.filter(q => q.clicked_at).length;
+    const knownTokens = new Set(outBtns.map(b => b.token).filter(Boolean));
+    const legacyLinks = links.filter(l => !knownTokens.has(l.token));
+    const linkClicks = links.filter(l => l.clicked_at).length;
+    const summary = (outBtns.length || qrs.length || links.length)
+      ? `<div class="tl-sum"><span>🔘 tlačítka odeslána: <b>${outBtns.length + qrs.length}</b></span><span>✓ kliknuto: <b>${clickedBtns}</b></span><span>🔗 odkazy: <b>${linkClicks}/${links.length}</b> kliknuto</span></div>`
+      : '';
+    right = `<div style="display:flex;justify-content:space-between;align-items:center">
+      <h3>@${esc(c.username || c.igsid || '')} <span class="muted" style="font-weight:normal;font-size:13px">→ @${esc(c.account || '')}</span></h3>
+      <button class="ghost" onclick="toggleState(${selConvo}, '${c.state==='human'?'bot':'human'}')">
+        ${c.state==='human' ? 'Vrátit botovi' : 'Převzít (člověk)'}</button></div>
+      ${summary}
+      <div class="thread">${msgs.map(msgHtml).join('')}</div>
+      ${legacyLinks.length ? `<div class="links-strip"><div class="muted" style="margin-bottom:4px">Odkazy odeslané před evidencí tlačítek:</div>${legacyLinks.map(l => `<div class="row"><span class="${l.clicked_at ? 'ok' : 'no'}">${l.clicked_at ? '✓ klik ' + fmt(l.clicked_at) + (l.clicks > 1 ? ' (' + l.clicks + '×)' : '') : '— bez kliku'}</span><a href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.step_key ? l.step_key + ' · ' : '')}${esc(l.url)}</a></div>`).join('')}</div>` : ''}
+      <div style="display:flex;gap:8px"><input id="reply" placeholder="Odpověď (odejde jako člověk)…"
+        onkeydown="if(event.key==='Enter')sendReply(${selConvo})">
+      <button class="act" onclick="sendReply(${selConvo})">Odeslat</button></div>`;
+  }
+  $('#view').innerHTML = `<div class="inbox"><div class="card" style="padding:0">${list}</div><div class="card">${right}</div></div>`;
+}
+window.pick = id => { selConvo = id; renderInbox(); };
+window.toggleState = async (id, state) => { await api(`/conversations/${id}/state`, { method:'POST', body:{ state } }); renderInbox(); };
+window.sendReply = async id => {
+  const el = $('#reply'); if (!el.value.trim()) return;
+  await api(`/conversations/${id}/reply`, { method:'POST', body:{ text: el.value.trim() } });
+  el.value = ''; renderInbox();
+};
+
+const TYPES = { comment_keyword:'Komentář (comment-to-DM)', dm_keyword:'Klíčové slovo v DM', story_reply:'Odpověď na story', story_mention:'Story mention' };
+
+async function renderTriggers(edit) {
+  const rows = await api('/triggers');
+  const t = edit ? rows.find(r => r.id === edit) : null;
+  $('#view').innerHTML = `
+  <div class="card"><h2>Triggery</h2><table><tr><th>Účet</th><th>Název</th><th>Typ</th><th>Klíčová slova</th><th>Scope</th><th>Stav</th><th></th></tr>
+  ${rows.map(r => { const tpl = JSON.parse(r.dm_template || '{}'); const nb = (tpl.buttons || []).length, ns = Object.keys(tpl.steps || {}).length;
+    return `<tr><td>@${esc(accName(r.account_id))}</td><td>${esc(r.name)}${nb || ns ? ` <span class="muted">(${nb} tl., ${ns} kroků)</span>` : ''}</td><td>${TYPES[r.type]}</td><td>${esc(JSON.parse(r.keywords).join(', '))}</td>
+    <td>${esc(r.media_scope || 'všechny')}</td><td>${r.active ? '🟢 aktivní' : '⚪ vypnutý'}</td>
+    <td><button class="ghost" onclick="editTrig(${r.id})">Upravit</button>
+        <button class="ghost" onclick="toggleTrig(${r.id})">${r.active ? 'Vypnout' : 'Zapnout'}</button>
+        <button class="ghost" onclick="delTrig(${r.id})">Smazat</button></td></tr>`; }).join('')}
+  </table></div>
+  <div class="card"><h2>${t ? 'Upravit trigger #' + t.id : 'Nový trigger'}</h2>
+  <div class="grid2">
+    <div><label>Účet (Instagram)</label><select id="f-acc">${accounts.map(a =>
+        `<option value="${a.id}" ${(t ? t.account_id : accounts[0]?.id)===a.id?'selected':''}>@${esc(a.username || a.ig_user_id)}</option>`).join('')}</select>
+      <label>Název</label><input id="f-name" value="${esc(t?.name || '')}">
+      <label>Typ</label><select id="f-type">${Object.entries(TYPES).map(([k,v]) =>
+        `<option value="${k}" ${t?.type===k?'selected':''}>${v}</option>`).join('')}</select>
+      <label>Klíčová slova (oddělená čárkou)</label><input id="f-kw" value="${esc(t ? JSON.parse(t.keywords).join(', ') : '')}">
+      <label>Media/story ID (prázdné = všechny posty)</label><input id="f-scope" value="${esc(t?.media_scope || '')}">
+      <label>Priorita (menší = dřív)</label><input id="f-prio" type="number" value="${t?.priority ?? 100}"></div>
+    <div><label>Veřejná odpověď na komentář (jen comment typ)</label><input id="f-pub" value="${esc(t?.public_reply_text || '')}">
+      <label>Text DM</label><textarea id="f-dm" rows="4">${esc(t ? JSON.parse(t.dm_template).text || '' : '')}</textarea>
+      <label>Tlačítka a kroky (JSON; buttons max 3: {"type":"web_url","title":"…","url":"…"} nebo {"type":"postback","title":"…","payload":"klíč"}; steps: {"klíč":{"text":"…","buttons":[…],"ask_email":true,"next":"klíč"}})</label>
+      <textarea id="f-tpl" rows="5">${esc(t ? JSON.stringify((({ text, ...rest }) => rest)(JSON.parse(t.dm_template)), null, 1) : '{}')}</textarea>
+      <label>Follow-upy (JSON: [{"delay_min":60,"text":"…"}])</label>
+      <textarea id="f-fu" rows="3">${esc(t?.followups || '[]')}</textarea>
+      <label><input id="f-act" type="checkbox" style="width:auto" ${!t || t.active ? 'checked' : ''}> aktivní</label></div>
+  </div>
+  <button class="act" onclick="saveTrig(${t?.id || 0})">${t ? 'Uložit změny' : 'Vytvořit trigger'}</button>
+  ${t ? '<button class="ghost" onclick="renderTriggers()">Zrušit</button>' : ''}</div>`;
+}
+window.editTrig = id => renderTriggers(id);
+window.saveTrig = async id => {
+  let followups, extra;
+  try { followups = JSON.parse($('#f-fu').value || '[]'); } catch { return alert('Follow-upy nejsou validní JSON'); }
+  try { extra = JSON.parse($('#f-tpl').value || '{}'); } catch { return alert('Tlačítka a kroky nejsou validní JSON'); }
+  const body = { account_id: Number($('#f-acc').value), type: $('#f-type').value, name: $('#f-name').value,
+    keywords: $('#f-kw').value.split(',').map(s => s.trim()).filter(Boolean),
+    media_scope: $('#f-scope').value.trim() || null, public_reply_text: $('#f-pub').value.trim() || null,
+    dm_template: { ...extra, text: $('#f-dm').value }, followups, active: $('#f-act').checked,
+    priority: Number($('#f-prio').value) };
+  await api(id ? `/triggers/${id}` : '/triggers', { method: id ? 'PUT' : 'POST', body });
+  renderTriggers();
+};
+window.toggleTrig = async id => {
+  const r = (await api('/triggers')).find(x => x.id === id);
+  await api(`/triggers/${id}`, { method:'PUT', body: { account_id:r.account_id, type:r.type, name:r.name, keywords:JSON.parse(r.keywords),
+    media_scope:r.media_scope, public_reply_text:r.public_reply_text, dm_template:JSON.parse(r.dm_template),
+    followups:JSON.parse(r.followups), active:!r.active, priority:r.priority } });
+  renderTriggers();
+};
+window.delTrig = async id => { if (confirm('Smazat trigger?')) { await api(`/triggers/${id}`, { method:'DELETE' }); renderTriggers(); } };
+
+async function renderContacts() {
+  const rows = await api('/contacts');
+  $('#view').innerHTML = `<div class="card"><h2>Kontakty (${rows.length})</h2>
+  <table><tr><th>Instagram</th><th>Účet</th><th>E-mail</th><th>Ecomail</th><th>První kontakt</th></tr>
+  ${rows.map(c => `<tr><td>@${esc(c.username || c.igsid)}</td><td>@${esc(c.account || '')}</td><td>${esc(c.email || '—')}</td>
+    <td>${c.email_synced_at ? '✅ ' + fmt(c.email_synced_at) : (c.email ? '⏳ čeká' : '—')}</td>
+    <td>${fmt(c.first_seen)}</td></tr>`).join('')}</table></div>`;
+}
+
+const METRICS = { triggered:'Spuštěno', public_reply:'Veř. odpovědi', dm_sent:'DM odesláno', step_sent:'Kroky (tlačítka)', link_click:'Kliky na odkaz', user_reply:'Odpovědi lidí', email_captured:'E-maily', ai_reply:'AI odpovědi', followup_sent:'Follow-upy', handoff:'Handoffy' };
+
+async function renderStats() {
+  const rows = await api('/stats?days=30');
+  const days = {};
+  for (const r of rows) { (days[r.day] ??= {})[r.metric] = (days[r.day][r.metric] || 0) + r.value; }
+  const keys = Object.keys(METRICS);
+  $('#view').innerHTML = `<div class="card"><h2>Statistiky (30 dní)</h2>
+  <table><tr><th>Den</th>${keys.map(k => `<th>${METRICS[k]}</th>`).join('')}</tr>
+  ${Object.entries(days).sort((a,b) => b[0].localeCompare(a[0])).map(([d, m]) =>
+    `<tr><td>${d}</td>${keys.map(k => `<td>${m[k] || ''}</td>`).join('')}</tr>`).join('')
+    || '<tr><td colspan="9" class="muted">Zatím žádná data.</td></tr>'}</table></div>`;
+}
+
+const SETTING_FIELDS = [
+  ['dry_run', 'Dry-run (1 = simulace IG zpráv; 0 = odesílat)'],
+  ['ai_enabled', 'AI odpovědi zapnuté (1/0)'],
+  ['ai_daily_limit', 'Max AI odpovědí na konverzaci a den'],
+  ['ai_allowed_links', 'Povolené odkazy pro AI (JSON pole povolených URL)'],
+  ['ai_style', 'Jazyk a styl AI odpovědí'],
+  ['ai_price_info', 'Podklady o cenách pro AI (výstupy kontrolujte)'],
+  ['disclosure_text', 'Text disclosure (první bot zpráva)'],
+  ['handoff_text', 'Text při předání člověku'],
+  ['email_thanks_text', 'Poděkování za e-mail'],
+  ['ecomail_list_id', 'Ecomail list ID'],
+];
+
+async function renderSettings() {
+  settings = await api('/settings');
+  $('#view').innerHTML = `<div class="card"><h2>Nastavení</h2>
+  ${SETTING_FIELDS.map(([k, label]) => `<label>${label} <span class="muted">(${k})</span></label>
+    <input id="s-${k}" value="${esc(settings[k] ?? '')}">`).join('')}
+  <br><button class="act" onclick="saveSettings()">Uložit</button></div>`;
+}
+window.saveSettings = async () => {
+  const body = {};
+  for (const [k] of SETTING_FIELDS) body[k] = $(`#s-${k}`).value;
+  await api('/settings', { method:'PUT', body });
+  badge(); alert('Uloženo.');
+};
+
+const es = new EventSource('/api/events');
+es.addEventListener('message', () => { if (tab === 'inbox') renderInbox(); });
+es.addEventListener('convo', () => { if (tab === 'inbox') renderInbox(); });
+es.addEventListener('contact', () => { if (tab === 'contacts') renderContacts(); });
+
+nav(); badge(); render();
+</script>
+</body>
+</html>

@@ -1,0 +1,40 @@
+services:
+  app:
+    build: ..
+    restart: unless-stopped
+    env_file: ../.env
+    environment:
+      WEBHOOK_HOST: 0.0.0.0
+      PANEL_HOST: 0.0.0.0
+      PORT: 8101
+      PANEL_PORT: 8102
+      DB_PATH: /app/data/ig-automat.db
+    ports:
+      - "127.0.0.1:8102:8102"
+    volumes:
+      - app_data:/app/data
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:8102/api/health',{headers:{authorization:'Basic '+Buffer.from((process.env.ADMIN_USER||'admin')+':'+process.env.ADMIN_PASSWORD).toString('base64')}}).then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      PUBLIC_DOMAIN: ${PUBLIC_DOMAIN:?Set PUBLIC_DOMAIN in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [app]
+volumes:
+  app_data:
+  caddy_data:
+  caddy_config:
